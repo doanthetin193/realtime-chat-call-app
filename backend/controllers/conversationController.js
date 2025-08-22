@@ -75,11 +75,11 @@ const addMemberToGroup = async (req, res) => {
       return res.status(400).json({ message: "Only group conversations can add members" });
     }
 
-    if (!conversation.members.includes(req.user.id)) {
+    if (!conversation.members.some(id => id.toString() === req.user.id)) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    if (conversation.members.includes(userId)) {
+    if (conversation.members.some(id => id.toString() === userId)) {
       return res.status(400).json({ message: "User already in group" });
     }
 
@@ -107,7 +107,7 @@ const removeMemberFromGroup = async (req, res) => {
       return res.status(400).json({ message: "Only group conversations can remove members" });
     }
 
-    if (!conversation.members.includes(req.user.id)) {
+    if (!conversation.members.some(id => id.toString() === req.user.id)) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
@@ -166,7 +166,7 @@ const deleteConversation = async (req, res) => {
     }
     
     // Kiểm tra user có trong conversation không
-    if (!conversation.members.includes(req.user.id)) {
+    if (!conversation.members.some(id => id.toString() === req.user.id)) {
       return res.status(403).json({ message: "Not authorized to delete this conversation" });
     }
     

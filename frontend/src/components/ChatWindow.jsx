@@ -10,9 +10,52 @@ const ChatWindow = ({ conversation }) => {
   const [loading, setLoading] = useState(true);
   const [typing, setTyping] = useState([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
+  const [classroomInfo, setClassroomInfo] = useState(null);
   const { token, user, socket } = useAuth();
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+
+  // Helper function để kiểm tra xem có phải classroom conversation không
+  const isClassroomConversation = (conversation) => {
+    return conversation?.isGroup && conversation?.name && !conversation?.isTemp;
+  };
+
+  // Tạo màu avatar khác nhau cho từng user
+  const getAvatarColor = (username) => {
+    const colors = [
+      'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-red-500',
+      'bg-yellow-500', 'bg-indigo-500', 'bg-pink-500', 'bg-teal-500'
+    ];
+    if (!username) return 'bg-gray-400';
+    
+    // Hash đơn giản từ username để chọn màu consistent
+    let hash = 0;
+    for (let i = 0; i < username.length; i++) {
+      hash = username.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  };
+
+  // Fetch classroom info nếu là classroom conversation
+  useEffect(() => {
+    if (conversation && isClassroomConversation(conversation)) {
+      // Tìm classroom từ conversation ID
+      fetchClassroomInfo();
+    } else {
+      setClassroomInfo(null);
+    }
+  }, [conversation]);
+
+  const fetchClassroomInfo = async () => {
+    try {
+      // API để lấy classroom info từ conversation
+      const classrooms = await api.listClassrooms(token, true);
+      const classroom = classrooms.find(cr => cr.conversation._id === conversation._id);
+      setClassroomInfo(classroom);
+    } catch (error) {
+      console.error('Error fetching classroom info:', error);
+    }
+  };
 
   useEffect(() => {
     if (conversation) {
@@ -198,39 +241,58 @@ const ChatWindow = ({ conversation }) => {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-white">
-      {/* Chat Header */}
-      <div className="p-4 border-b border-gray-200 bg-gray-50">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="text-3xl">
-              {conversation.isGroup ? '👥' : '👤'}
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">{getConversationName()}</h3>
-              <div className="text-sm text-gray-500">
-                {conversation.isTemp ? (
-                  'Start a conversation...'
-                ) : conversation.isGroup ? (
-                  `${conversation.members?.length} members`
-                ) : (
-                  'Active now'
-                )}
+    <div className="flex-1 flex bg-white">
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Chat Header */}
+        <div className="p-4 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="text-3xl">
+                {isClassroomConversation(conversation) ? '🏫' : conversation.isGroup ? '👥' : '👤'}
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">{getConversationName()}</h3>
+                <div className="text-sm text-gray-500">
+                  {conversation.isTemp ? (
+                    'Start a conversation...'
+                  ) : isClassroomConversation(conversation) ? (
+                    <div className="flex items-center space-x-2">
+                      <span>{conversation.members?.length} thành viên</span>
+                      {classroomInfo && (
+                        <span>• Lớp trưởng: {classroomInfo.leader?.username}</span>
+                      )}
+                    </div>
+                  ) : conversation.isGroup ? (
+                    `${conversation.members?.length} members`
+                  ) : (
+                    'Active now'
+                  )}
+                </div>
               </div>
             </div>
+            
+            {/* Video Call Button - chỉ hiện cho classroom hoặc direct chat */}
+            {(isClassroomConversation(conversation) || (!conversation.isGroup && !conversation.isTemp)) && (
+              <VideoCall
+                socket={socket}
+                currentUser={user}
+                targetUser={conversation.isGroup ? null : conversation.members?.find(member => member._id !== user.id)}
+                conversation={isClassroomConversation(conversation) ? conversation : null}
+                onEndCall={() => console.log('Call ended')}
+              />
+            )}
           </div>
           
-          {/* Video Call Button (only for non-group chats and not temp conversations) */}
-          {!conversation.isGroup && !conversation.isTemp && (
-            <VideoCall
-              socket={socket}
-              currentUser={user}
-              targetUser={conversation.members?.find(member => member._id !== user.id)}
-              onEndCall={() => console.log('Call ended')}
-            />
+          {/* Hiển thị thêm thông tin classroom nếu có */}
+          {isClassroomConversation(conversation) && classroomInfo && (
+            <div className="mt-2 pt-2 border-t border-gray-100">
+              <div className="text-xs text-gray-600">
+                📚 Phòng học: {classroomInfo.name}
+              </div>
+            </div>
           )}
         </div>
-      </div>
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2 chat-messages">
@@ -261,12 +323,17 @@ const ChatWindow = ({ conversation }) => {
             return (
               <div key={message._id} className={`flex mb-1 message-fade-in ${isOwn ? 'justify-end' : 'justify-start'}`}>
                 <div className={`flex max-w-xs lg:max-w-md ${isOwn ? 'flex-row-reverse' : ''}`}>
-                  {/* Avatar cho người khác */}
+                  {/* Avatar cho người khác - cải thiện cho classroom */}
                   {!isOwn && (
                     <div className="flex items-end mr-2">
                       {showAvatar ? (
-                        <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-sm">
-                          {message.sender.avatarUrl || message.sender.username?.charAt(0)?.toUpperCase() || '👤'}
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-white ${
+                          // Màu avatar khác nhau cho từng user trong classroom
+                          isClassroomConversation(conversation) 
+                            ? getAvatarColor(message.sender.username)
+                            : 'bg-gray-400'
+                        }`}>
+                          {message.sender.username?.charAt(0)?.toUpperCase() || '👤'}
                         </div>
                       ) : (
                         <div className="w-8"></div>
@@ -277,8 +344,19 @@ const ChatWindow = ({ conversation }) => {
                   <div className="flex flex-col">
                     {/* Tên người gửi (chỉ hiện cho tin nhắn đầu tiên của người khác) */}
                     {!isOwn && showAvatar && (
-                      <div className="text-xs text-gray-500 mb-1 px-3">
+                      <div className={`text-xs mb-1 px-3 font-medium ${
+                        isClassroomConversation(conversation)
+                          ? getAvatarColor(message.sender.username).replace('bg-', 'text-')
+                          : 'text-gray-500'
+                      }`}>
                         {message.sender.username}
+                        {/* Hiển thị badge leader nếu trong classroom */}
+                        {isClassroomConversation(conversation) && 
+                         classroomInfo?.leader?._id === message.sender._id && (
+                          <span className="ml-1 text-xs bg-yellow-100 text-yellow-800 px-1 py-0.5 rounded">
+                            👑 Lớp trưởng
+                          </span>
+                        )}
                       </div>
                     )}
                     
@@ -385,6 +463,39 @@ const ChatWindow = ({ conversation }) => {
           onFileSelect={sendFileMessage}
           onCancel={() => setShowFileUpload(false)}
         />
+      )}
+      </div>
+
+      {/* Members Sidebar cho Classroom */}
+      {isClassroomConversation(conversation) && (
+        <div className="w-64 bg-gray-50 border-l border-gray-200 p-4">
+          <h4 className="font-semibold text-gray-900 mb-3">Thành viên ({conversation.members?.length})</h4>
+          <div className="space-y-2">
+            {conversation.members?.map(member => (
+              <div key={member._id} className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold text-white ${
+                  getAvatarColor(member.username)
+                }`}>
+                  {member.username?.charAt(0)?.toUpperCase() || '👤'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center space-x-1">
+                    <span className="text-sm font-medium text-gray-900 truncate">
+                      {member.username}
+                      {member._id === user.id && ' (bạn)'}
+                    </span>
+                    {classroomInfo?.leader?._id === member._id && (
+                      <span className="text-xs">👑</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {member.isOnline ? '🟢 Online' : '⚫ Offline'}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

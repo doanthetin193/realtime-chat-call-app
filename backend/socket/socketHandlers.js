@@ -51,7 +51,7 @@ module.exports = (io) => {
                 socketId: onlineUsers.get(userId)
             }));
             console.log('📡 Broadcasting online users:', onlineUsersList);
-            io.emit('onlineUsers', onlineUsersList);
+            io.emit('online_users', onlineUsersList);
             
             // Join user to their conversations
             const conversations = await Conversation.find({ members: socket.userId });
@@ -62,7 +62,7 @@ module.exports = (io) => {
             
             // Notify others about online status
             console.log('📢 User came online:', socket.userId);
-            socket.broadcast.emit('userOnline', {
+            socket.broadcast.emit('user_online', {
                 userId: socket.userId,
                 username: socket.user.username,
                 avatarUrl: socket.user.avatarUrl
@@ -71,8 +71,9 @@ module.exports = (io) => {
             // Handle joining a conversation
             socket.on('join_conversation', async (conversationId) => {
                 try {
-                    const conversation = await Conversation.findById(conversationId);
-                    if (conversation && conversation.members.includes(socket.userId)) {
+                    const conversation = await Conversation.findById(conversationId).select('members');
+                    const isMember = conversation && conversation.members.some(m => m.toString() === socket.userId);
+                    if (isMember) {
                         socket.join(conversationId);
                         console.log(`📝 User ${socket.user.username} joined conversation ${conversationId}`);
                     } else {
@@ -90,8 +91,9 @@ module.exports = (io) => {
                     const { conversationId, content, type = 'text', mediaUrl = '' } = data;
                     
                     // Verify user is member of conversation
-                    const conversation = await Conversation.findById(conversationId);
-                    if (!conversation || !conversation.members.includes(socket.userId)) {
+                    const conversation = await Conversation.findById(conversationId).select('members');
+                    const isMember = conversation && conversation.members.some(m => m.toString() === socket.userId);
+                    if (!conversation || !isMember) {
                         return socket.emit('error', { message: 'Unauthorized' });
                     }
                     
@@ -141,10 +143,14 @@ module.exports = (io) => {
             // Handle message seen
             socket.on('mark_seen', async ({ messageId, conversationId }) => {
                 try {
+                    const conversation = await Conversation.findById(conversationId).select('members');
+                    const isMember = conversation && conversation.members.some(m => m.toString() === socket.userId);
+                    if (!conversation || !isMember) {
+                        return;
+                    }
                     await Message.findByIdAndUpdate(messageId, {
                         $addToSet: { seenBy: socket.userId }
                     });
-                    
                     socket.to(conversationId).emit('message_seen', {
                         messageId,
                         userId: socket.userId
@@ -229,11 +235,11 @@ module.exports = (io) => {
                         socketId: onlineUsers.get(userId)
                     }));
                     console.log('📡 Broadcasting online users after disconnect:', onlineUsersList);
-                    io.emit('onlineUsers', onlineUsersList);
+                    io.emit('online_users', onlineUsersList);
                     
                     // Notify others about offline status
                     console.log('📢 User went offline:', socket.userId);
-                    socket.broadcast.emit('userOffline', {
+                    socket.broadcast.emit('user_offline', {
                         userId: socket.userId,
                         username: socket.user.username
                     });

@@ -11,7 +11,7 @@ const userRoutes = require("./routes/userRoutes");
 const conversationRoutes = require("./routes/conversationRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
-const devRoutes = require("./routes/devRoutes");
+const classroomRoutes = require("./routes/classroomRoutes");
 
 // Connect to MongoDB
 connectDB();
@@ -40,7 +40,7 @@ app.use("/api/user", userRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/upload", uploadRoutes);
-app.use("/api/dev", devRoutes);
+app.use("/api/classrooms", classroomRoutes);
 
 // Socket.IO setup
 require('./socket/socketHandlers')(io);

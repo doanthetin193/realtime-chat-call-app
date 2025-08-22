@@ -72,4 +72,24 @@ const getOnlineUsers = async (req, res) => {
     }
 };
 
-module.exports = { getMe, updateProfile, searchUsers, getOnlineUsers };
+const setClassLeader = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { isClassLeader: true },
+      { new: true }
+    ).select('-passwordHash');
+    
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.json(updatedUser);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+module.exports = { getMe, updateProfile, searchUsers, getOnlineUsers, setClassLeader };

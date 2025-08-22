@@ -27,7 +27,8 @@ const uploadFile = async (req, res) => {
             return res.status(400).json({ message: 'No file uploaded' });
         }
         
-        const fileUrl = `http://localhost:5000/uploads/${req.file.filename}`;
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const fileUrl = `${baseUrl}/uploads/${req.file.filename}`;
         
         res.json({
             message: "File uploaded successfully",

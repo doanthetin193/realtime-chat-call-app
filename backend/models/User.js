@@ -29,6 +29,10 @@ const userSchema = new mongoose.Schema({
     socketId: {
         type: String,
         default: ""
+    },
+    isClassLeader: {
+        type: Boolean,
+        default: false
     }},
     {timestamps: true});
 

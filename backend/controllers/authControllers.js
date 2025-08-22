@@ -19,7 +19,7 @@ const register = async(req,res) => {
         const passwordHash = await bcrypt.hash(password, salt);
         const user = await User.create({email,username,passwordHash});
         const token = jwt.sign({ id: user._id}, process.env.JWT_SECRET, { expiresIn: '15d' });
-        res.status(201).json({ token, user: { id: user._id, email: user.email, username: user.username } });
+        res.status(201).json({ token, user: { id: user._id, email: user.email, username: user.username, isClassLeader: user.isClassLeader } });
     }
     catch(err){
         console.error(err);
@@ -46,7 +46,7 @@ const login = async(req,res) => {
         }
 
         const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '15d' });
-        res.status(200).json({ token, user: { id: user._id, email: user.email, username: user.username } });
+        res.status(200).json({ token, user: { id: user._id, email: user.email, username: user.username, isClassLeader: user.isClassLeader } });
     }
     catch(err){
         console.error(err);

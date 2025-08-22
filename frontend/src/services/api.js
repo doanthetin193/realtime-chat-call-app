@@ -111,6 +111,34 @@ export const api = {
     });
     return response.json();
   },
+
+  // Classrooms
+  listClassrooms: async (token, mineOnly = true) => {
+    const response = await fetch(`${API_BASE_URL}/classrooms?mine=${mineOnly ? '1' : '0'}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.json();
+  },
+
+  createClassroom: async (token, data) => {
+    const response = await fetch(`${API_BASE_URL}/classrooms`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+    return response.json();
+  },
+
+  joinClassroom: async (token, classroomId) => {
+    const response = await fetch(`${API_BASE_URL}/classrooms/${classroomId}/join`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.json();
+  },
 };
 
 // Socket.IO connection

@@ -17,7 +17,13 @@ const ChatApp = () => {
       if (token && !user) {
         try {
           const userData = await api.getMe(token);
-          setUser(userData);
+          if (userData.message) {
+            // API returned error message
+            console.error('Auth check failed:', userData.message);
+            localStorage.removeItem('token');
+          } else {
+            setUser(userData);
+          }
         } catch (error) {
           console.error('Auth check failed:', error);
           localStorage.removeItem('token');

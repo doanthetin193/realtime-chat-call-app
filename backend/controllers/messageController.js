@@ -6,6 +6,16 @@ const getMessages = async (req, res) => {
     const { conversationId } = req.params;
     const { limit = 20, before } = req.query;
 
+    // Validate membership of current user in the conversation
+    const conversation = await Conversation.findById(conversationId).select('members');
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+    const isMember = conversation.members.some(m => m.toString() === req.user.id);
+    if (!isMember) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
     const filter = { conversation: conversationId };
     if (before) {
       filter._id = { $lt: before }; // paginate bằng _id
@@ -27,9 +37,15 @@ const sendMessage = async (req, res) => {
   try {
     const { conversationId, content, type, mediaUrl } = req.body;
 
-    const conversation = await Conversation.findById(conversationId);
+    const conversation = await Conversation.findById(conversationId).select('members');
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    // Validate membership of current user in the conversation
+    const isMember = conversation.members.some(m => m.toString() === req.user.id);
+    if (!isMember) {
+      return res.status(403).json({ message: "Not authorized" });
     }
 
     const message = await Message.create({

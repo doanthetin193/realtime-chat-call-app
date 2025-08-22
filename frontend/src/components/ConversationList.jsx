@@ -193,31 +193,30 @@ const ConversationList = ({ onSelectConversation, selectedConversationId }) => {
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold text-gray-800">Chats</h2>
           <div className="flex gap-2">
-            {user?.isClassLeader && (
-              <button
-                onClick={async () => {
-                  const name = window.prompt('Tên lớp học mới:');
-                  if (!name || name.trim() === '') return;
-                  try {
-                    const classroom = await api.createClassroom(token, { name: name.trim() });
-                    setClassrooms(prev => [classroom, ...prev]);
-                    // Auto-select classroom conversation
-                    if (classroom?.conversation) {
-                      onSelectConversation(classroom.conversation);
-                    }
-                    alert(`Đã tạo lớp học "${name}" thành công!`);
-                  } catch (e) {
-                    console.error('Create classroom failed', e);
-                    alert('Không thể tạo lớp học. Vui lòng thử lại!');
+            {/* Bất kỳ user nào cũng có thể tạo lớp học */}
+            <button
+              onClick={async () => {
+                const name = window.prompt('Tên lớp học mới:');
+                if (!name || name.trim() === '') return;
+                try {
+                  const classroom = await api.createClassroom(token, { name: name.trim() });
+                  setClassrooms(prev => [classroom, ...prev]);
+                  // Auto-select classroom conversation
+                  if (classroom?.conversation) {
+                    onSelectConversation(classroom.conversation);
                   }
-                }}
-                className="bg-purple-500 text-white px-3 py-2 rounded-lg hover:bg-purple-600 transition-colors flex items-center space-x-1"
-                title="Tạo lớp học mới"
-              >
-                <span>🏫</span>
-                <span className="text-sm font-medium">Tạo lớp</span>
-              </button>
-            )}
+                  alert(`Đã tạo lớp học "${name}" thành công! Bạn là lớp trưởng của lớp này.`);
+                } catch (e) {
+                  console.error('Create classroom failed', e);
+                  alert('Không thể tạo lớp học. Vui lòng thử lại!');
+                }
+              }}
+              className="bg-purple-500 text-white px-3 py-2 rounded-lg hover:bg-purple-600 transition-colors flex items-center space-x-1"
+              title="Tạo lớp học mới"
+            >
+              <span>🏫</span>
+              <span className="text-sm font-medium">Tạo lớp</span>
+            </button>
 
           </div>
         </div>

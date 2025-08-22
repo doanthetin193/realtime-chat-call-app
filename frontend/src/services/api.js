@@ -139,6 +139,33 @@ export const api = {
     });
     return response.json();
   },
+
+  // Kick member from classroom (chỉ leader)
+  removeMemberFromClassroom: async (token, classroomId, userId) => {
+    const response = await fetch(`${API_BASE_URL}/classrooms/${classroomId}/members/${userId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.json();
+  },
+
+  // Leave classroom (thành viên tự rời)
+  leaveClassroom: async (token, classroomId) => {
+    const response = await fetch(`${API_BASE_URL}/classrooms/${classroomId}/leave`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.json();
+  },
+
+  // Delete classroom (chỉ leader)
+  deleteClassroom: async (token, classroomId) => {
+    const response = await fetch(`${API_BASE_URL}/classrooms/${classroomId}`, {
+      method: 'DELETE', 
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.json();
+  },
 };
 
 // Socket.IO connection

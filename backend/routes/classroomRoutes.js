@@ -1,17 +1,24 @@
 const express = require('express');
-const { createClassroom, listClassrooms, joinClassroom, addMember, removeMember } = require('../controllers/classroomController');
+const { createClassroom, listClassrooms, joinClassroom, addMember, removeMember, leaveClassroom, deleteClassroom } = require('../controllers/classroomController');
 const authMiddleware = require('../middleware/authMiddleware');
-const User = require('../models/User');
 
 const router = express.Router();
 
-// Guard: only leaders can create classroom
-const requireLeader = async (req, res, next) => {
+// Chỉ leader của lớp mới có thể add/remove members
+const requireClassroomLeader = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id).select('isClassLeader');
-        if (!user || !user.isClassLeader) {
-            return res.status(403).json({ message: 'Only class leaders can create classrooms' });
+        const { classroomId } = req.params;
+        const Classroom = require('../models/Classroom');
+        const classroom = await Classroom.findById(classroomId);
+        
+        if (!classroom) {
+            return res.status(404).json({ message: 'Classroom not found' });
         }
+        
+        if (classroom.leader.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Only classroom leader can manage members' });
+        }
+        
         next();
     } catch (err) {
         console.error(err);
@@ -19,12 +26,18 @@ const requireLeader = async (req, res, next) => {
     }
 };
 
-router.post('/', authMiddleware, requireLeader, createClassroom);
+// Bất kỳ user nào cũng có thể tạo classroom và trở thành leader của lớp đó
+router.post('/', authMiddleware, createClassroom);
 router.get('/', authMiddleware, listClassrooms);
 router.post('/:classroomId/join', authMiddleware, joinClassroom);
-router.post('/:classroomId/members', authMiddleware, requireLeader, addMember);
-router.delete('/:classroomId/members/:userId', authMiddleware, requireLeader, removeMember);
+
+// Chỉ leader của lớp mới có thể add/remove members hoặc xóa classroom
+router.post('/:classroomId/members', authMiddleware, requireClassroomLeader, addMember);
+router.delete('/:classroomId/members/:userId', authMiddleware, requireClassroomLeader, removeMember);
+
+// Route để thành viên tự rời khỏi classroom (không cần là leader)
+router.post('/:classroomId/leave', authMiddleware, leaveClassroom);
+
+router.delete('/:classroomId', authMiddleware, requireClassroomLeader, deleteClassroom);
 
 module.exports = router;
-
-

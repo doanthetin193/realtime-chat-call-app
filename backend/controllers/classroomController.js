@@ -51,8 +51,14 @@ const listClassrooms = async (req, res) => {
         const filter = mine === '1' ? { members: req.user.id } : {};
         const classrooms = await Classroom.find(filter)
             .populate('leader', 'username email')
-            .populate('members', 'username email avatarUrl')
-            .populate({ path: 'conversation', populate: { path: 'lastMessage' } })
+            .populate('members', 'username email avatarUrl isOnline lastSeen')
+            .populate({ 
+                path: 'conversation', 
+                populate: [
+                    { path: 'lastMessage' },
+                    { path: 'members', select: 'username email avatarUrl isOnline lastSeen' }
+                ]
+            })
             .sort({ updatedAt: -1 });
         res.json(classrooms);
     } catch (err) {
@@ -148,7 +154,7 @@ const removeMember = async (req, res) => {
             await conversation.save();
         }
 
-        const populated = await classroom
+        const populated = await Classroom.findById(classroomId)
             .populate('leader', 'username email')
             .populate('members', 'username email avatarUrl');
         res.json(populated);
@@ -158,6 +164,103 @@ const removeMember = async (req, res) => {
     }
 };
 
-module.exports = { createClassroom, listClassrooms, joinClassroom, addMember, removeMember };
+// Xóa classroom (chỉ leader mới có thể xóa)
+const deleteClassroom = async (req, res) => {
+    try {
+        const { classroomId } = req.params;
+        const classroom = await Classroom.findById(classroomId).populate('members', 'username _id');
+        
+        if (!classroom) {
+            return res.status(404).json({ message: 'Classroom not found' });
+        }
+        
+        // Chỉ leader mới có thể xóa classroom
+        if (classroom.leader.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Only leader can delete classroom' });
+        }
+        
+        // Emit socket event để thông báo cho tất cả members
+        const io = req.app.get('socketio');
+        if (io) {
+            // Thông báo cho tất cả members trong classroom
+            classroom.members.forEach(member => {
+                io.emit('classroom_deleted', {
+                    classroomId: classroomId,
+                    classroomName: classroom.name,
+                    message: `Lớp học "${classroom.name}" đã bị xóa bởi lớp trưởng`
+                });
+            });
+        }
+        
+        // Xóa conversation liên quan
+        if (classroom.conversation) {
+            await Conversation.findByIdAndDelete(classroom.conversation);
+        }
+        
+        // Xóa classroom
+        await Classroom.findByIdAndDelete(classroomId);
+        
+        res.json({ message: 'Classroom deleted successfully' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Leave classroom (thành viên tự rời khỏi lớp học)
+const leaveClassroom = async (req, res) => {
+    try {
+        const { classroomId } = req.params;
+        const classroom = await Classroom.findById(classroomId).populate('leader', 'username');
+        
+        if (!classroom) {
+            return res.status(404).json({ message: 'Classroom not found' });
+        }
+        
+        // Kiểm tra user có trong classroom không
+        const isMember = classroom.members.some(m => m.toString() === req.user.id);
+        if (!isMember) {
+            return res.status(400).json({ message: 'You are not a member of this classroom' });
+        }
+        
+        // Leader không thể tự rời, phải xóa classroom hoặc chuyển quyền trước
+        if (classroom.leader._id.toString() === req.user.id) {
+            return res.status(403).json({ message: 'Leaders cannot leave classroom. You must delete the classroom or transfer leadership first.' });
+        }
+        
+        // Remove from classroom members
+        classroom.members = classroom.members.filter(m => m.toString() !== req.user.id);
+        await classroom.save();
+
+        // Remove from conversation
+        const conversation = await Conversation.findById(classroom.conversation);
+        if (conversation) {
+            conversation.members = conversation.members.filter(m => m.toString() !== req.user.id);
+            await conversation.save();
+        }
+        
+        // Emit socket event để thông báo
+        const io = req.app.get('socketio');
+        if (io) {
+            io.emit('member_left_classroom', {
+                classroomId: classroomId,
+                classroomName: classroom.name,
+                memberId: req.user.id,
+                memberUsername: req.user.username,
+                message: `${req.user.username} đã rời khỏi lớp học "${classroom.name}"`
+            });
+        }
+
+        res.json({ 
+            message: 'Successfully left the classroom',
+            classroomName: classroom.name 
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+module.exports = { createClassroom, listClassrooms, joinClassroom, addMember, removeMember, leaveClassroom, deleteClassroom };
 
 

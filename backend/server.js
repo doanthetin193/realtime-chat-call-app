@@ -42,6 +42,9 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/classrooms", classroomRoutes);
 
+// Make socket.io accessible to controllers
+app.set('socketio', io);
+
 // Socket.IO setup
 require('./socket/socketHandlers')(io);
 

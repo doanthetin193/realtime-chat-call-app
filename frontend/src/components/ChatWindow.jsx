@@ -75,13 +75,30 @@ const ChatWindow = ({ conversation }) => {
       socket.on('user_typing', handleUserTyping);
       socket.on('user_stop_typing', handleStopTyping);
       
+      // Listen for classroom events
+      socket.on('member_left_classroom', (data) => {
+        console.log('👋 Member left classroom:', data);
+        if (data.classroomId === classroomInfo?._id) {
+          // Refresh classroom info to update member list
+          fetchClassroomInfo();
+        }
+      });
+      
+      socket.on('classroom_deleted', (data) => {
+        console.log('🗑️ Classroom deleted:', data);
+        alert(data.message);
+        window.location.reload();
+      });
+      
       return () => {
         socket.off('new_message', handleNewMessage);
         socket.off('user_typing', handleUserTyping);
         socket.off('user_stop_typing', handleStopTyping);
+        socket.off('member_left_classroom');
+        socket.off('classroom_deleted');
       };
     }
-  }, [socket, conversation]);
+  }, [socket, conversation, classroomInfo]);
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -226,6 +243,58 @@ const ChatWindow = ({ conversation }) => {
     
     const otherMember = conversation.members?.find(member => member._id !== user.id);
     return otherMember?.username || 'Unknown';
+  };
+
+  // Kick member from classroom (chỉ leader)
+  const kickMember = async (memberId, memberName) => {
+    if (!classroomInfo || !window.confirm(`Bạn có chắc muốn kick ${memberName} khỏi lớp học?`)) return;
+    
+    try {
+      await api.removeMemberFromClassroom(token, classroomInfo._id, memberId);
+      
+      // Update classroomInfo state
+      setClassroomInfo(prev => ({
+        ...prev,
+        members: prev.members.filter(m => m._id !== memberId)
+      }));
+      
+      alert(`Đã kick ${memberName} khỏi lớp học`);
+    } catch (error) {
+      console.error('Error kicking member:', error);
+      alert('Không thể kick thành viên. Vui lòng thử lại!');
+    }
+  };
+
+  // Leave classroom (thành viên tự rời)
+  const leaveClassroom = async () => {
+    if (!classroomInfo || !window.confirm(`Bạn có chắc muốn rời khỏi lớp học "${classroomInfo.name}"?`)) return;
+    
+    try {
+      await api.leaveClassroom(token, classroomInfo._id);
+      alert('Đã rời khỏi lớp học thành công!');
+      
+      // Reload trang để cập nhật danh sách
+      window.location.reload();
+    } catch (error) {
+      console.error('Error leaving classroom:', error);
+      alert('Không thể rời khỏi lớp học. Vui lòng thử lại!');
+    }
+  };
+
+  // Delete classroom (chỉ leader)
+  const deleteClassroom = async () => {
+    if (!classroomInfo || !window.confirm(`Bạn có chắc muốn xóa lớp học "${classroomInfo.name}"?\n\nToàn bộ tin nhắn và thành viên sẽ bị xóa vĩnh viễn.`)) return;
+    
+    try {
+      await api.deleteClassroom(token, classroomInfo._id);
+      alert('Đã xóa lớp học thành công!');
+      
+      // Reload trang hoặc redirect về trang chính
+      window.location.reload();
+    } catch (error) {
+      console.error('Error deleting classroom:', error);
+      alert('Không thể xóa lớp học. Vui lòng thử lại!');
+    }
   };
 
   if (!conversation) {
@@ -467,31 +536,118 @@ const ChatWindow = ({ conversation }) => {
       </div>
 
       {/* Members Sidebar cho Classroom */}
-      {isClassroomConversation(conversation) && (
+      {console.log('🔍 Debug:', { isClassroom: isClassroomConversation(conversation), classroomInfo, conversation })}
+      {isClassroomConversation(conversation) && classroomInfo && (
         <div className="w-64 bg-gray-50 border-l border-gray-200 p-4">
-          <h4 className="font-semibold text-gray-900 mb-3">Thành viên ({conversation.members?.length})</h4>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-semibold text-gray-900">
+              Thành viên ({classroomInfo.members?.length || conversation.members?.length || 0})
+            </h4>
+            
+            {/* QUẢN LÝ LỚP HỌC - Nút xóa cho Leader, nút rời cho thành viên */}
+            <div className="flex gap-1">
+              {/* Nút XÓA LỚP HỌC - chỉ Leader hoặc Class Leader */}
+              {(classroomInfo?.leader?._id === user._id || user?.isClassLeader) && (
+                <button
+                  onClick={() => {
+                    console.log('🎯 Delete classroom button clicked');
+                    deleteClassroom();
+                  }}
+                  className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100 transition-colors"
+                  title="Xóa lớp học"
+                >
+                  🗑️
+                </button>
+              )}
+              
+              {/* Nút RỜI PHÒNG - chỉ thành viên thường */}
+              {(classroomInfo?.leader?._id !== user._id && !user?.isClassLeader) && (
+                <button
+                  onClick={() => {
+                    console.log('🚪 Leave classroom button clicked');
+                    leaveClassroom();
+                  }}
+                  className="text-orange-600 hover:text-orange-800 p-1 rounded hover:bg-orange-100 transition-colors"
+                  title="Rời khỏi lớp học"
+                >
+                  🚪
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="space-y-2">
-            {conversation.members?.map(member => (
-              <div key={member._id} className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold text-white ${
-                  getAvatarColor(member.username)
-                }`}>
-                  {member.username?.charAt(0)?.toUpperCase() || '👤'}
+            {(classroomInfo.members || conversation.members || []).map(member => (
+              <div key={member._id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-100 w-full">
+                <div className="flex items-center space-x-2 flex-1 min-w-0">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0 ${
+                    getAvatarColor(member.username)
+                  }`}>
+                    {member.username?.charAt(0)?.toUpperCase() || '👤'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-1">
+                      <span className="text-sm font-medium text-gray-900 truncate">
+                        {member.username}
+                        {member._id === user.id && ' (bạn)'}
+                      </span>
+                      {classroomInfo?.leader?._id === member._id && (
+                        <span className="text-xs">👑</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {member.isOnline ? '🟢 Online' : '⚫ Offline'}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-1">
-                    <span className="text-sm font-medium text-gray-900 truncate">
-                      {member.username}
-                      {member._id === user.id && ' (bạn)'}
-                    </span>
-                    {classroomInfo?.leader?._id === member._id && (
-                      <span className="text-xs">👑</span>
+                
+                {console.log('🔍 Member ID Debug for', member.username, {
+                  memberId: member._id,
+                  memberIdType: typeof member._id,
+                  currentUserId: user.id,
+                  userIdType: typeof user.id,
+                  isNotSelfStrict: member._id !== user.id,
+                  isNotSelfString: String(member._id) !== String(user.id),
+                  isSelf: member._id === user.id || String(member._id) === String(user.id),
+                  memberIdString: String(member._id),
+                  userIdString: String(user.id),
+                  comparison: String(member._id) + ' !== ' + String(user.id) + ' = ' + (String(member._id) !== String(user.id))
+                })}
+                
+                {/* Điều kiện chính xác: không phải chính mình */}
+                {String(member._id) !== String(user.id) ? (
+                  <div className="flex space-x-1">
+                    {/* DEBUG: Nút kick tạm thời */}
+                    <button
+                      onClick={() => {
+                        console.log('🎯 Test kick button clicked for:', member.username);
+                        alert(`Test kick: ${member.username}`);
+                      }}
+                      className="bg-red-500 text-white p-1 rounded text-xs font-bold flex-shrink-0"
+                      title={`TEST KICK: ${member.username}`}
+                    >
+                      TEST
+                    </button>
+
+                    {/* Nút kick thật - kiểm tra quyền leader */}
+                    {((classroomInfo?.leader?._id && String(classroomInfo.leader._id) === String(user.id)) || user?.isClassLeader) && (
+                      <button
+                        onClick={() => {
+                          console.log('🎯 Real kick button clicked for:', member.username);
+                          kickMember(member._id, member.username);
+                        }}
+                        className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100 transition-colors text-xs font-bold flex-shrink-0"
+                        title={`Kick ${member.username} khỏi lớp học`}
+                      >
+                        ❌
+                      </button>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {member.isOnline ? '🟢 Online' : '⚫ Offline'}
+                ) : (
+                  <div className="text-xs text-blue-600 font-semibold">
+                    (Bạn)
                   </div>
-                </div>
+                )}
               </div>
             ))}
           </div>

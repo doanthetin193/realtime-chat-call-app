@@ -22,7 +22,6 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "axios": "^1.11.0",
     "nodemon": "^3.1.10"
   },
   "type": "commonjs"

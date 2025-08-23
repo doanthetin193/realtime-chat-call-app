@@ -44,7 +44,7 @@ const ChatWindow = ({ conversation }) => {
     } else {
       setClassroomInfo(null);
     }
-  }, [conversation]);
+  }, [conversation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchClassroomInfo = async () => {
     try {
@@ -58,6 +58,24 @@ const ChatWindow = ({ conversation }) => {
   };
 
   useEffect(() => {
+    const fetchMessages = async () => {
+      if (!conversation || conversation.isTemp) {
+        setMessages([]);
+        setLoading(false);
+        return;
+      }
+      
+      setLoading(true);
+      try {
+        const data = await api.getMessages(token, conversation._id, 50);
+        setMessages(data);
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     if (conversation) {
       fetchMessages();
       
@@ -66,7 +84,7 @@ const ChatWindow = ({ conversation }) => {
         socket.emit('join_conversation', conversation._id);
       }
     }
-  }, [conversation, socket]);
+  }, [conversation, socket, token]);
 
   // Socket event listeners
   useEffect(() => {
@@ -85,9 +103,13 @@ const ChatWindow = ({ conversation }) => {
       });
       
       socket.on('classroom_deleted', (data) => {
-        console.log('🗑️ Classroom deleted:', data);
-        alert(data.message);
-        window.location.reload();
+        console.log('🗑️ Classroom deleted event received:', data);
+        
+        // Nếu đang xem classroom bị xóa, navigate về trang chính
+        if (conversation && conversation._id === data.conversationId) {
+          alert(data.message);
+          window.location.hash = '#/'; // Navigate về trang chính  
+        }
       });
       
       return () => {
@@ -98,30 +120,12 @@ const ChatWindow = ({ conversation }) => {
         socket.off('classroom_deleted');
       };
     }
-  }, [socket, conversation, classroomInfo]);
+  }, [socket, conversation, classroomInfo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto scroll to bottom
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  const fetchMessages = async () => {
-    if (!conversation || conversation.isTemp) {
-      setMessages([]);
-      setLoading(false);
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      const data = await api.getMessages(token, conversation._id, 50);
-      setMessages(data);
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleNewMessage = (message) => {
     if (message.conversation === conversation?._id) {
@@ -271,10 +275,10 @@ const ChatWindow = ({ conversation }) => {
     
     try {
       await api.leaveClassroom(token, classroomInfo._id);
-      alert('Đã rời khỏi lớp học thành công!');
       
-      // Reload trang để cập nhật danh sách
-      window.location.reload();
+      // Navigate về trang chính, socket event sẽ update UI
+      window.location.hash = '#/';
+      
     } catch (error) {
       console.error('Error leaving classroom:', error);
       alert('Không thể rời khỏi lớp học. Vui lòng thử lại!');
@@ -287,10 +291,11 @@ const ChatWindow = ({ conversation }) => {
     
     try {
       await api.deleteClassroom(token, classroomInfo._id);
-      alert('Đã xóa lớp học thành công!');
       
-      // Reload trang hoặc redirect về trang chính
-      window.location.reload();
+      // Không cần reload, socket event sẽ handle việc update UI
+      // Chỉ cần clear current conversation
+      window.location.hash = '#/'; // Navigate về trang chính
+      
     } catch (error) {
       console.error('Error deleting classroom:', error);
       alert('Không thể xóa lớp học. Vui lòng thử lại!');
@@ -348,7 +353,7 @@ const ChatWindow = ({ conversation }) => {
                 currentUser={user}
                 targetUser={conversation.isGroup ? null : conversation.members?.find(member => member._id !== user.id)}
                 conversation={isClassroomConversation(conversation) ? conversation : null}
-                onEndCall={() => console.log('Call ended')}
+                onEndCall={() => {}}
               />
             )}
           </div>
@@ -536,7 +541,6 @@ const ChatWindow = ({ conversation }) => {
       </div>
 
       {/* Members Sidebar cho Classroom */}
-      {console.log('🔍 Debug:', { isClassroom: isClassroomConversation(conversation), classroomInfo, conversation })}
       {isClassroomConversation(conversation) && classroomInfo && (
         <div className="w-64 bg-gray-50 border-l border-gray-200 p-4">
           <div className="flex items-center justify-between mb-3">
@@ -549,10 +553,7 @@ const ChatWindow = ({ conversation }) => {
               {/* Nút XÓA LỚP HỌC - chỉ Leader hoặc Class Leader */}
               {(classroomInfo?.leader?._id === user._id || user?.isClassLeader) && (
                 <button
-                  onClick={() => {
-                    console.log('🎯 Delete classroom button clicked');
-                    deleteClassroom();
-                  }}
+                  onClick={deleteClassroom}
                   className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100 transition-colors"
                   title="Xóa lớp học"
                 >
@@ -563,10 +564,7 @@ const ChatWindow = ({ conversation }) => {
               {/* Nút RỜI PHÒNG - chỉ thành viên thường */}
               {(classroomInfo?.leader?._id !== user._id && !user?.isClassLeader) && (
                 <button
-                  onClick={() => {
-                    console.log('🚪 Leave classroom button clicked');
-                    leaveClassroom();
-                  }}
+                  onClick={leaveClassroom}
                   className="text-orange-600 hover:text-orange-800 p-1 rounded hover:bg-orange-100 transition-colors"
                   title="Rời khỏi lớp học"
                 >
@@ -589,7 +587,7 @@ const ChatWindow = ({ conversation }) => {
                     <div className="flex items-center space-x-1">
                       <span className="text-sm font-medium text-gray-900 truncate">
                         {member.username}
-                        {member._id === user.id && ' (bạn)'}
+                        {member._id === user._id && ' (bạn)'}
                       </span>
                       {classroomInfo?.leader?._id === member._id && (
                         <span className="text-xs">👑</span>
@@ -601,53 +599,24 @@ const ChatWindow = ({ conversation }) => {
                   </div>
                 </div>
                 
-                {console.log('🔍 Member ID Debug for', member.username, {
-                  memberId: member._id,
-                  memberIdType: typeof member._id,
-                  currentUserId: user.id,
-                  userIdType: typeof user.id,
-                  isNotSelfStrict: member._id !== user.id,
-                  isNotSelfString: String(member._id) !== String(user.id),
-                  isSelf: member._id === user.id || String(member._id) === String(user.id),
-                  memberIdString: String(member._id),
-                  userIdString: String(user.id),
-                  comparison: String(member._id) + ' !== ' + String(user.id) + ' = ' + (String(member._id) !== String(user.id))
-                })}
-                
-                {/* Điều kiện chính xác: không phải chính mình */}
-                {String(member._id) !== String(user.id) ? (
-                  <div className="flex space-x-1">
-                    {/* DEBUG: Nút kick tạm thời */}
+                {/* KICK BUTTON - Chỉ LEADER thấy nút kick cho thành viên khác */}
+                <div className="flex items-center">
+                  {/* Điều kiện: KHÔNG phải chính mình VÀ user là LEADER */}
+                  {(member._id !== user._id) && 
+                   ((classroomInfo?.leader?._id === user._id) || user?.isClassLeader) ? (
                     <button
-                      onClick={() => {
-                        console.log('🎯 Test kick button clicked for:', member.username);
-                        alert(`Test kick: ${member.username}`);
-                      }}
-                      className="bg-red-500 text-white p-1 rounded text-xs font-bold flex-shrink-0"
-                      title={`TEST KICK: ${member.username}`}
+                      onClick={() => kickMember(member._id, member.username)}
+                      className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100 transition-colors text-xs font-bold flex-shrink-0"
+                      title={`Kick ${member.username} khỏi lớp học`}
                     >
-                      TEST
+                      ❌
                     </button>
-
-                    {/* Nút kick thật - kiểm tra quyền leader */}
-                    {((classroomInfo?.leader?._id && String(classroomInfo.leader._id) === String(user.id)) || user?.isClassLeader) && (
-                      <button
-                        onClick={() => {
-                          console.log('🎯 Real kick button clicked for:', member.username);
-                          kickMember(member._id, member.username);
-                        }}
-                        className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100 transition-colors text-xs font-bold flex-shrink-0"
-                        title={`Kick ${member.username} khỏi lớp học`}
-                      >
-                        ❌
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-xs text-blue-600 font-semibold">
-                    (Bạn)
-                  </div>
-                )}
+                  ) : (
+                    <div className="text-xs text-gray-400">
+                      {/* Thành viên thường không thấy gì */}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>

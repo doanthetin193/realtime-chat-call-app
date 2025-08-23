@@ -168,41 +168,55 @@ const removeMember = async (req, res) => {
 const deleteClassroom = async (req, res) => {
     try {
         const { classroomId } = req.params;
+        console.log(`🗑️ Delete classroom request for ID: ${classroomId} by user: ${req.user.username || req.user.id}`);
+        
         const classroom = await Classroom.findById(classroomId).populate('members', 'username _id');
         
         if (!classroom) {
+            console.log(`❌ Classroom not found: ${classroomId}`);
             return res.status(404).json({ message: 'Classroom not found' });
         }
         
+        console.log(`📋 Found classroom "${classroom.name}" with leader: ${classroom.leader}`);
+        console.log(`🔑 Checking permission - classroom leader: ${classroom.leader.toString()}, request user: ${req.user.id}`);
+        
         // Chỉ leader mới có thể xóa classroom
         if (classroom.leader.toString() !== req.user.id) {
+            console.log(`🚫 Permission denied - user ${req.user.id} is not the leader of classroom "${classroom.name}"`);
             return res.status(403).json({ message: 'Only leader can delete classroom' });
         }
+        
+        console.log(`✅ Permission granted - proceeding with deletion`);
         
         // Emit socket event để thông báo cho tất cả members
         const io = req.app.get('socketio');
         if (io) {
-            // Thông báo cho tất cả members trong classroom
-            classroom.members.forEach(member => {
-                io.emit('classroom_deleted', {
-                    classroomId: classroomId,
-                    classroomName: classroom.name,
-                    message: `Lớp học "${classroom.name}" đã bị xóa bởi lớp trưởng`
-                });
+            console.log('📡 Broadcasting classroom_deleted event for:', classroom.name);
+            
+            // Broadcast to all connected clients (not just members)
+            io.emit('classroom_deleted', {
+                classroomId: classroomId,
+                conversationId: classroom.conversation, // Thêm conversationId
+                classroomName: classroom.name,
+                message: `Lớp học "${classroom.name}" đã bị xóa bởi lớp trưởng`,
+                deletedBy: req.user.username || req.user.id
             });
         }
         
         // Xóa conversation liên quan
         if (classroom.conversation) {
+            console.log(`🗑️ Deleting related conversation: ${classroom.conversation}`);
             await Conversation.findByIdAndDelete(classroom.conversation);
         }
         
         // Xóa classroom
+        console.log(`🗑️ Deleting classroom: ${classroom.name}`);
         await Classroom.findByIdAndDelete(classroomId);
         
+        console.log(`✅ Classroom "${classroom.name}" deleted successfully`);
         res.json({ message: 'Classroom deleted successfully' });
     } catch (err) {
-        console.error(err);
+        console.error('❌ Delete classroom error:', err);
         res.status(500).json({ message: 'Server error' });
     }
 };

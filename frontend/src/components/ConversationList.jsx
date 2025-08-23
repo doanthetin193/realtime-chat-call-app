@@ -1,155 +1,83 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const ConversationList = ({ onSelectConversation, selectedConversationId }) => {
-  const [conversations, setConversations] = useState([]);
   const [classrooms, setClassrooms] = useState([]);
   const [allClassrooms, setAllClassrooms] = useState([]);
-
-  const [onlineUsers, setOnlineUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const { token, user, socket, logout } = useAuth();
 
-  useEffect(() => {
-    if (token) {
-      fetchConversations();
-      // Load my classrooms to show classroom chats as well
-      fetchMyClassrooms();
-      fetchAllClassrooms();
-    }
-  }, [token]);
-
-  // Listen for new messages to update conversation list
-  useEffect(() => {
-    if (socket) {
-      socket.on('new_message', (message) => {
-        setConversations(prev => prev.map(conv => 
-          conv._id === message.conversation 
-            ? { ...conv, lastMessage: message, updatedAt: new Date() }
-            : conv
-        ).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)));
-      });
-
-      // Listen for online users updates
-      socket.on('online_users', (users) => {
-        console.log('Received online_users:', users);
-        setOnlineUsers(users);
-      });
-
-      socket.on('user_online', (userData) => {
-        console.log('User came online:', userData);
-        setOnlineUsers(prev => [...prev.filter(u => u.userId !== userData.userId), userData]);
-      });
-
-      socket.on('user_offline', (userData) => {
-        console.log('User went offline:', userData);
-        setOnlineUsers(prev => prev.filter(u => u.userId !== userData.userId));
-      });
-
-      return () => {
-        socket.off('new_message');
-        socket.off('online_users');
-        socket.off('user_online');
-        socket.off('user_offline');
-      };
-    }
-  }, [socket]);
-
-  const fetchMyClassrooms = async () => {
+  const fetchMyClassrooms = useCallback(async () => {
     try {
       const data = await api.listClassrooms(token, true);
       setClassrooms(data);
     } catch (error) {
       console.error('Error fetching classrooms:', error);
     }
-  };
+  }, [token]);
 
-  const fetchAllClassrooms = async () => {
+  const fetchAllClassrooms = useCallback(async () => {
     try {
       const data = await api.listClassrooms(token, false);
       setAllClassrooms(data);
     } catch (error) {
       console.error('Error fetching all classrooms:', error);
     }
-  };
+  }, [token]);
 
-  const fetchConversations = async () => {
-    try {
-      const data = await api.getConversations(token);
-      setConversations(data);
-    } catch (error) {
-      console.error('Error fetching conversations:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-
-
-
-
-
-  const formatLastMessage = (message) => {
-    if (!message) return 'No messages yet';
-    if (message.type === 'image') return '📷 Image';
-    return message.content;
-  };
-
-  const getConversationName = (conversation) => {
-    if (conversation.isGroup) return conversation.name;
-    
-    const otherMember = conversation.members.find(member => member._id !== user.id);
-    return otherMember ? otherMember.username : 'Unknown';
-  };
-
-  const getUserOnlineStatus = (userId) => {
-    const isOnline = onlineUsers.some(u => u.userId === userId);
-    console.log(`Checking online status for user ${userId}:`, isOnline, 'Online users:', onlineUsers);
-    return isOnline;
-  };
-
-  const deleteConversation = async (conversationId) => {
-    if (!window.confirm('Bạn có chắc muốn xóa cuộc trò chuyện này? Tất cả tin nhắn sẽ bị xóa vĩnh viễn.')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`http://localhost:5000/api/conversations/${conversationId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+  useEffect(() => {
+    const loadData = async () => {
+      if (token) {
+        try {
+          const [classroomsData, allClassroomsData] = await Promise.all([
+            api.listClassrooms(token, true),
+            api.listClassrooms(token, false)
+          ]);
+          
+          setClassrooms(classroomsData);
+          setAllClassrooms(allClassroomsData);
+        } catch (error) {
+          console.error('Error loading data:', error);
+        } finally {
+          setLoading(false);
         }
-      });
-
-      if (response.ok) {
-        // Xóa conversation khỏi state
-        setConversations(conversations.filter(conv => conv._id !== conversationId));
-        
-        // Nếu đang xem conversation này thì clear selection
-        if (selectedConversationId === conversationId) {
-          onSelectConversation(null);
-        }
-        
-        alert('Đã xóa cuộc trò chuyện thành công');
-      } else {
-        const error = await response.json();
-        alert(`Không thể xóa cuộc trò chuyện: ${error.message}`);
       }
-    } catch (error) {
-      console.error('Error deleting conversation:', error);
-      alert('Lỗi khi xóa cuộc trò chuyện');
-    }
-  };
-
-  const getConversationAvatar = (conversation) => {
-    if (conversation.isGroup) return '👥';
+    };
     
-    const otherMember = conversation.members.find(member => member._id !== user.id);
-    return otherMember?.avatarUrl || '👤';
-  };
+    loadData();
+  }, [token]);
+
+      // Listen for socket events
+  useEffect(() => {
+    if (socket) {
+      // Listen for classroom deletion events
+      const handleClassroomDeleted = (data) => {
+        // Remove classroom from both lists immediately
+        setClassrooms(prev => prev.filter(classroom => classroom._id !== data.classroomId));
+        setAllClassrooms(prev => prev.filter(classroom => classroom._id !== data.classroomId));
+        
+        // Show notification
+        alert(data.message);
+      };
+
+      // Listen for member left classroom events  
+      const handleMemberLeft = () => {
+        // Refresh classroom lists to update member counts
+        fetchMyClassrooms();
+        fetchAllClassrooms();
+      };
+
+      socket.on('classroom_deleted', handleClassroomDeleted);
+      socket.on('member_left_classroom', handleMemberLeft);
+
+      return () => {
+        socket.off('classroom_deleted', handleClassroomDeleted);
+        socket.off('member_left_classroom', handleMemberLeft);
+      };
+    }
+  }, [socket, fetchMyClassrooms, fetchAllClassrooms]);
 
   if (loading) {
     return (
@@ -307,75 +235,7 @@ const ConversationList = ({ onSelectConversation, selectedConversationId }) => {
           </div>
         )}
 
-        {conversations.length > 0 && (
-          <div>
-            <h3 className="px-4 py-2 text-sm font-semibold text-gray-600 bg-gray-50">Direct Chats</h3>
-            {conversations.map(conversation => (
-              <div
-                key={conversation._id}
-                className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 flex items-center space-x-3 ${
-                  selectedConversationId === conversation._id ? 'bg-blue-50 border-blue-200' : ''
-                }`}
-              >
-                <div 
-                  onClick={() => onSelectConversation(conversation)}
-                  className="flex items-center space-x-3 flex-1"
-                >
-                  <div className="relative">
-                    <div className="text-3xl">
-                      {getConversationAvatar(conversation)}
-                    </div>
-                    {/* Online status for 1-1 chats */}
-                    {!conversation.isGroup && (() => {
-                      const otherMember = conversation.members?.find(member => member._id !== user.id);
-                      if (!otherMember) return null;
-                      const isOnline = getUserOnlineStatus(otherMember._id);
-                      return (
-                        <div className={isOnline ? 'online-indicator' : 'offline-indicator'}></div>
-                      );
-                    })()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-center">
-                      <h3 className="font-medium text-gray-900 truncate">
-                        {getConversationName(conversation)}
-                      </h3>
-                      <span className="text-xs text-gray-500">
-                        {conversation.updatedAt && new Date(conversation.updatedAt).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 truncate">
-                      {formatLastMessage(conversation.lastMessage)}
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Action buttons */}
-                <div className="flex items-center space-x-1">
-                  {/* Delete conversation button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteConversation(conversation._id);
-                    }}
-                    className="text-gray-400 hover:text-red-600 p-1"
-                    title="Delete Conversation"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-
       </div>
-
-
     </div>
   );
 };
